@@ -53,8 +53,10 @@ bootstrap-local.sh# Bootstrap script for LocalStack
 ### 1. Clone the repo
 
 ```bash
-git clone <your-repo-url>
-npm install
+git clone https://github.com/rohit-sonawane7/aws-serverless-task-management-app.git
+cd aws-serverless-task-management-app/
+run shell script file to compete setup and install dependencies and docker-compose containers
+bash setup.sh
 ```
 
 ### 2. Start LocalStack & Serverless Offline
@@ -86,7 +88,7 @@ API will be available at:
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Create Task
 
@@ -136,7 +138,7 @@ API will be available at:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Run unit + integration tests:
 

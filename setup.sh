@@ -9,6 +9,12 @@ if [ ! -f package.json ]; then
   npm init -y
 fi
 
+echo "Installing temporary serverless@^4.18.2..."
+npm i -D serverless@4.18.2
+
+
+# Step 3: Override it back to serverless@^3.40.0
+
 # 2. Install runtime dependencies
 echo "📦 Installing runtime dependencies..."
 npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb \
@@ -24,6 +30,9 @@ npm install -D typescript ts-node @types/node @types/jsonwebtoken \
                serverless serverless-offline \
                serverless-step-functions \
                npm-add-script
+
+echo "Reverting to serverless@^3.40.0..."
+npm i -D serverless@3.40.0
 
 # 4. Create tsconfig.json if not exists
 if [ ! -f tsconfig.json ]; then
@@ -80,13 +89,6 @@ services:
 EOL
 fi
 
-# 7. Add npm scripts
-echo "📝 Adding useful npm scripts to package.json..."
-npx npm-add-script -k "dev" -v "serverless offline"
-npx npm-add-script -k "deploy" -v "serverless deploy"
-npx npm-add-script -k "test" -v "vitest --run"
-npx npm-add-script -k "localstack" -v "docker-compose up -d"
-npx npm-add-script -k "bootstrap-local" -v "bash ./bootstrap-local.sh"
 
 # 8. Create bootstrap-local.sh (to init DynamoDB, S3, Step Functions in LocalStack)
 cat <<'EOL' > bootstrap-local.sh
@@ -96,6 +98,7 @@ echo "⚡ Bootstrapping LocalStack resources..."
 
 ENDPOINT="--endpoint-url=http://localhost:4566"
 REGION="--region us-east-1"
+ENV_FILE=".env"
 
 # Wait for LocalStack to be ready
 echo "⏳ Waiting for LocalStack..."
@@ -134,12 +137,32 @@ aws stepfunctions create-state-machine \
   --role-arn arn:aws:iam::000000000000:role/DummyRole \
   $ENDPOINT $REGION || echo "✔️ State machine already exists"
 
-echo "✅ LocalStack bootstrap complete!"
+# Fetch ARN
+STATE_MACHINE_ARN=$(aws stepfunctions list-state-machines $ENDPOINT $REGION \
+  --query "stateMachines[?name=='taskStatusFlow'].stateMachineArn" \
+  --output text)
+
+echo "🔗 State Machine ARN: $STATE_MACHINE_ARN"
+
+# Write to .env
+echo "📝 Writing environment variables to $ENV_FILE"
+cat > $ENV_FILE <<EOL
+IS_OFFLINE=true
+TABLE_NAME=tasksTable
+BUCKET_NAME=task-attachments-dev
+STATE_MACHINE_ARN=$STATE_MACHINE_ARN
+JWT_SECRET=mysecret
+AWS_REGION=us-east-1
 EOL
+
+echo "✅ LocalStack bootstrap complete! Environment saved in $ENV_FILE"
+
 
 chmod +x bootstrap-local.sh
 
 echo "🎉 Setup complete! Next steps:"
 echo "1. Run 'npm run localstack' to start LocalStack"
+npm run localstack
 echo "2. Run 'npm run bootstrap-local' to create DynamoDB, S3, Step Functions"
-echo "3. Run 'npm run dev' to start API locally"
+npm run bootstrap-local
+echo "3. Now Run 'npm run dev' to start API locally"
