@@ -1,0 +1,152 @@
+service: task-management-api
+
+frameworkVersion: "3.40.0"
+
+plugins:
+  - serverless-offline
+  - serverless-step-functions
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  stage: dev
+  environment:
+    TABLE_NAME: tasksTable
+    BUCKET_NAME: task-attachments-${self:provider.stage}
+    STATE_MACHINE_ARN: !GetAtt TaskStatusFlow.Arn
+    JWT_SECRET: mysecret
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+          Resource: !GetAtt TasksTable.Arn
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource: arn:aws:s3:::${self:provider.environment.BUCKET_NAME}/*
+        - Effect: Allow
+          Action:
+            - states:StartExecution
+          Resource: "*"
+
+functions:
+  authorizer:
+    handler: src/handlers/authorizer.main
+
+  createTask:
+    handler: src/handlers/createTask.main
+    events:
+      - http:
+          path: tasks
+          method: post
+          cors: true
+          authorizer:
+            name: authorizer
+            type: TOKEN
+
+  listTasks:
+    handler: src/handlers/listTasks.main
+    events:
+      - http:
+          path: tasks
+          method: get
+          cors: true
+          authorizer:
+            name: authorizer
+            type: TOKEN
+
+  getTask:
+    handler: src/handlers/getTask.main
+    events:
+      - http:
+          path: tasks/{id}
+          method: get
+          cors: true
+          authorizer:
+            name: authorizer
+            type: TOKEN
+
+  updateTask:
+    handler: src/handlers/updateTask.main
+    events:
+      - http:
+          path: tasks/{id}
+          method: put
+          cors: true
+          authorizer:
+            name: authorizer
+            type: TOKEN
+
+  deleteTask:
+    handler: src/handlers/deleteTask.main
+    events:
+      - http:
+          path: tasks/{id}
+          method: delete
+          cors: true
+          authorizer:
+            name: authorizer
+            type: TOKEN
+
+  updateTaskStatus:
+    handler: src/handlers/updateTaskStatus.main
+    events:
+      - http:
+          path: tasks/{id}/status
+          method: patch
+          cors: true
+          authorizer:
+            name: authorizer
+            type: TOKEN
+
+resources:
+  Resources:
+    TasksTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: taskId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: taskId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    TaskAttachmentsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.BUCKET_NAME}
+
+    TaskStatusFlow:
+      Type: AWS::StepFunctions::StateMachine
+      Properties:
+        StateMachineName: taskStatusFlow
+        RoleArn: arn:aws:iam::000000000000:role/DummyRole
+        DefinitionString: |
+          {
+            "Comment": "Task status transition workflow",
+            "StartAt": "Pending",
+            "States": {
+              "Pending": { "Type": "Pass", "Next": "InProgress" },
+              "InProgress": { "Type": "Pass", "Next": "Completed" },
+              "Completed": { "Type": "Succeed" }
+            }
+          }
+
+custom:
+  serverless-offline:
+    httpPort: 3000
